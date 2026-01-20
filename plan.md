@@ -1,3 +1,38 @@
+## Repo architecture
+- Monorepo with `/apps` for apps and `/packages` for shared packages.
+- `/apps/web` is the Next.js web client using the App Router.
+- `/apps/api` contains API routes, authentication, webhooks, and server logic.
+- `/apps/worker` handles background jobs like sync, reminders, and exports.
+- `/packages/ui` is the design system with tokens, components, icons, and Storybook.
+- `/packages/db` contains the ORM schema, migrations, and database client.
+- `/packages/types` holds shared domain types and Zod schemas.
+- `/packages/integrations` contains connector SDKs for Google, Microsoft, etc.
+- `/packages/config` includes shared configs like ESLint, tsconfig, and Tailwind.
+
+## Stack defaults (to prevent agent drift)
+- Package manager: **pnpm**
+- Monorepo tooling: **Turborepo**
+- Web framework: **Next.js (App Router)**
+- API: **tRPC** (typed end-to-end)
+- Validation: **Zod**
+- Database: **Postgres**
+- ORM: **Prisma**
+- UI primitives: **Radix UI**
+- Styling: **Tailwind CSS** + tokens via CSS variables (components must not hardcode colors)
+- UI docs: **Storybook** under `/packages/ui`
+
+If any of these conflict with `plan.md`, prefer `plan.md`.
+
+## Commands and hygiene
+- Ensure the project builds and typechecks before finishing.
+- Prefer these repo scripts (create if missing):
+  - `pnpm lint`
+  - `pnpm typecheck`
+  - `pnpm test`
+  - `pnpm format` (or `pnpm prettier`)
+  - `pnpm storybook` (for `/packages/ui`)
+- Run formatting + lint + typecheck + tests before marking a milestone complete.
+- Keep diffs focused; avoid large refactors unless asked.
 # PLAN.md — Collaborative PM SaaS (Asana × Notion) for Freelance Work
 
 > Living plan for building a collaborative project management SaaS to track clients, projects, tasks, meetings, time, and invoices — designed for solo-first shipping and SaaS-scale growth.
