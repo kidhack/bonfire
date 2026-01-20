@@ -1,38 +1,3 @@
-## Repo architecture
-- Monorepo with `/apps` for apps and `/packages` for shared packages.
-- `/apps/web` is the Next.js web client using the App Router.
-- `/apps/api` contains API routes, authentication, webhooks, and server logic.
-- `/apps/worker` handles background jobs like sync, reminders, and exports.
-- `/packages/ui` is the design system with tokens, components, icons, and Storybook.
-- `/packages/db` contains the ORM schema, migrations, and database client.
-- `/packages/types` holds shared domain types and Zod schemas.
-- `/packages/integrations` contains connector SDKs for Google, Microsoft, etc.
-- `/packages/config` includes shared configs like ESLint, tsconfig, and Tailwind.
-
-## Stack defaults (to prevent agent drift)
-- Package manager: **pnpm**
-- Monorepo tooling: **Turborepo**
-- Web framework: **Next.js (App Router)**
-- API: **tRPC** (typed end-to-end)
-- Validation: **Zod**
-- Database: **Postgres**
-- ORM: **Prisma**
-- UI primitives: **Radix UI**
-- Styling: **Tailwind CSS** + tokens via CSS variables (components must not hardcode colors)
-- UI docs: **Storybook** under `/packages/ui`
-
-If any of these conflict with `plan.md`, prefer `plan.md`.
-
-## Commands and hygiene
-- Ensure the project builds and typechecks before finishing.
-- Prefer these repo scripts (create if missing):
-  - `pnpm lint`
-  - `pnpm typecheck`
-  - `pnpm test`
-  - `pnpm format` (or `pnpm prettier`)
-  - `pnpm storybook` (for `/packages/ui`)
-- Run formatting + lint + typecheck + tests before marking a milestone complete.
-- Keep diffs focused; avoid large refactors unless asked.
 # PLAN.md — Collaborative PM SaaS (Asana × Notion) for Freelance Work
 
 > Living plan for building a collaborative project management SaaS to track clients, projects, tasks, meetings, time, and invoices — designed for solo-first shipping and SaaS-scale growth.
@@ -191,9 +156,9 @@ If any of these conflict with `plan.md`, prefer `plan.md`.
 
 ## 5) Domain Model (MVP)
 
-### Core entities
 - **User**
 - **Organization**
+- **OrgEntitlements** (plan, feature flags, limits, subscription status)
 - **Membership** (user ↔ org + role)
 - **Client** (directory container)
 - **Contact** (belongs to client)
@@ -223,6 +188,118 @@ If any of these conflict with `plan.md`, prefer `plan.md`.
 - Invoicing supports both:
   - **time-based** (from TimeEntry)
   - **fixed-fee** (manual line items) for contracts without time tracking
+
+---
+
+## 6) Auth, Onboarding, and Recovery (MVP)
+
+### Goals
+- Passkeys-first authentication that is safe for real-world device loss.
+- Simple onboarding that lands users in the **Projects pipeline** quickly.
+- Collaboration-ready org setup (invites, roles, org switching).
+
+### Core flows
+- **First-run onboarding**
+  - Create account → create first organization/workspace → land in Projects.
+- **Join an organization**
+  - Accept invite → choose display name/avatar → land in Projects.
+- **Organization switcher**
+  - Switch orgs from the app header; remember last-used org.
+
+### Authentication
+- **Primary**: WebAuthn **passkeys**.
+- **Recovery** (MVP requires at least one):
+  - Email magic link **or** backup codes.
+- **Device management**
+  - Add/remove passkeys; handle “lost device” recovery.
+
+### Sessions & security
+- Secure cookie sessions.
+- Rate-limit auth + invite endpoints.
+- Account/org membership changes must invalidate/refresh sessions appropriately.
+
+### Acceptance criteria
+- A user can: sign up, create org, sign in via passkey, sign out, recover access, and add a second passkey.
+- A user can: invite another user to an org and the invitee can join.
+
+---
+
+## 7) Observability, Debugging, and Admin Tools (MVP)
+
+### Goals
+- Make it easy to understand “what happened” (activity, audit) and “why it broke” (errors, jobs), especially once integrations start.
+
+### Observability baseline
+- **Structured logs** including `requestId`, `orgId`, `userId` (when available).
+- **Error tracking** (e.g., Sentry or equivalent) for web + api + worker.
+- **Health checks** for api + worker.
+
+### Debug/admin surfaces (MVP)
+- **EventLog viewer** (internal/admin-only): filter by org, actor, entity, action.
+- **Jobs dashboard** (internal/admin-only): recent jobs, status, last error, retry.
+- **Feature flags** (simple): enable/disable experimental features (AI assistant, texture theme, auto-invoice).
+
+### Dev ergonomics
+- Seed data script to generate a demo org with sample clients/projects/tasks/meetings/milestones.
+- Clear run scripts: dev, typecheck, lint, test, storybook.
+- CI/preview environment to quickly verify changes (PR previews + checks)
+
+### Acceptance criteria
+- Errors are captured with context and can be traced to a request.
+- Job failures are visible and retryable.
+- EventLog is queryable for recent changes.
+
+---
+
+## 8) Monetization, Entitlements, and Costs
+
+### Pricing philosophy
+- Default to **generous solo value**.
+- Keep core productivity features free, even if they’re “power-user” features.
+- Charge for what creates meaningful ongoing cost or support burden:
+  - Collaboration seats + org administration
+  - High usage (storage, retention, automation volume)
+  - Enterprise security/compliance needs (SSO, audit controls)
+  - Priority support
+  - AI usage (metered add-on)
+
+### Tiers (initial)
+- **Free** (solo-first)
+  - One organization, single seat
+  - Core pipeline: Projects + Tasks + Meetings + Milestones
+  - Views: List/Kanban/Calendar/**Gantt**
+  - Integrations: Google/Microsoft calendar sync (MVP scope)
+  - Automation: auto-invoice schedules
+  - Manual invoice CSV export
+- **Business**
+  - Multi-seat collaboration + roles
+  - Shared saved views (org-level)
+  - Higher limits (projects, storage, retention, automation runs)
+  - Advanced admin controls (invites, roles, auditing filters)
+- **Enterprise**
+  - SSO (SAML) + SCIM (later)
+  - Advanced audit/retention controls + export
+  - Security review support and compliance artifacts (SOC2 posture)
+  - Priority support + SLAs (optional later)
+
+### Add-ons
+- **AI Add-on ($)**
+  - AI assistant features (summaries, next-steps, drafting)
+  - Optional credit-based metering (tokens/credits)
+
+### Entitlements model (build early, bill later)
+
+- Store plan + feature flags at the **Organization** level:
+  - `org.plan = free | business | enterprise`
+  - `org.subscriptionStatus = trialing | active | past_due | canceled`
+  - `org.features = { ai, sso, scim, advancedAudit, clientPortals }` (core features like gantt/integrations/auto-invoice are enabled on Free by default)
+  - `org.limits = { seats, projects, storageMB, retentionDays, automationRunsPerMonth }`
+- Enforce via a single backend gate:
+  - `requireFeature(orgId, "ai")`
+  - `requireFeature(orgId, "advancedAudit")`
+  - `requireLimit(orgId, "seats")`
+  - `requireLimit(orgId, "automationRunsPerMonth")`
+- Billing provider integration (e.g., Stripe) can be added later without changing core authorization logic.
 
 ---
 
@@ -270,7 +347,7 @@ If any of these conflict with `plan.md`, prefer `plan.md`.
 
 ### Key user actions (MVP)
 1. Create a project (optionally assign a client)
-2. Manage tasks (list/kanban/calendar/gantt; filter/group)
+2. Manage tasks (list/kanban/calendar; filter/group; optional per-project Gantt planning)
 3. Log meetings (notes + attendees; next steps → tasks)
 4. Add milestones (reviews/key dates)
 5. Track time and estimates when needed
@@ -283,12 +360,17 @@ If any of these conflict with `plan.md`, prefer `plan.md`.
 ## 10) Build Plan (Milestones)
 
 ### M0 — Foundations + Design System
+
 - Monorepo setup (lint/format/test)
-- Auth (passkeys + recovery)
+- Auth scaffolding (passkeys-first) + at least one recovery method (magic link or backup codes)
 - Organizations + memberships + RBAC middleware
-- `/packages/ui` tokens + base primitives (Button/Input/Dialog/Tabs)
+- Org entitlements scaffolding (plan, paid-only feature flags, limits) + backend gating helpers
+- `/packages/ui` tokens + base primitives (Button/Input/Select/Dialog/Tabs/Tooltip)
 - Storybook setup + a11y checks
 - EventLog scaffolding + activity feed base components
+- Observability baseline: structured logging + error tracking hooks
+- Dev seed script to generate a demo org + sample data
+- CI baseline: lint + typecheck + test + Storybook build; preview deploy enabled (Vercel or equivalent)
 
 #### Cursor execution prompt (M0)
 Copy/paste this into Cursor when starting implementation for M0:
@@ -350,11 +432,21 @@ Implement `/packages/ui` design system for the app.
 - Export CSV
 - Optional auto-invoice schedule (weekly/biweekly/monthly/1st+15th)
 
+
 ### M8 — Integrations
 - Google/Microsoft connectors
 - Calendar sync (read/write)
 - Email/webhook notifications
 - Attach meetings to projects automatically via matching rules (optional later)
+
+### M8.5 — MCP Server (Remote) for Agent Integrations
+- Create `/apps/mcp` as a remote MCP server that exposes Bonfire capabilities as **tools/resources/prompts**
+- Auth: OAuth 2.1 (or equivalent) with org-scoped tokens; enforce RBAC + scopes on every call
+- Safety: tool allowlist, rate limits, response size caps, and sensitive-field redaction by default
+- Auditing: log every MCP tool invocation to `EventLog` (actor, org, tool, params hash, result metadata)
+- Initial **read** tools: `projects.list`, `projects.get`, `tasks.list`, `calendar.listEvents`, `invoices.list`
+- Initial **write** tools (tightly scoped): `tasks.create`, `tasks.updateStatus`, `meetings.addNotes`, `docs.createFromTemplate`
+- Docs: add `/docs/agent/mcp.md` describing tools, scopes, and examples
 
 ### M9 — AI Assistant (v0)
 - Next-steps suggestions
