@@ -9,9 +9,22 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "storybook": "turbo run storybook",
-    "format": "prettier --check ."
+    "format": "prettier --check .",
+    "dev:clean": "rm -f apps/web/.next/dev/lock && rm -rf apps/web/.next && echo \"If port is in use, run: lsof -i :3000\"",
+    "db:migrate": "pnpm --filter @bonfire/db prisma:migrate",
+    "db:seed": "pnpm --filter @bonfire/db seed",
+    "web:dev": "pnpm dev:clean && pnpm --filter @bonfire/web dev",
+    "web:ports": "lsof -i :3000-3010 || true",
+    "web:kill": "lsof -i :3000-3010 || true"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "pnpm": {
+    "overrides": {
+      "@storybook/*": "8.6.14"
+    }
   },
   "devDependencies": {
+    "@eslint/js": "9.39.2",
     "@storybook/addon-a11y": "8.6.14",
     "@storybook/addon-essentials": "8.6.14",
     "@storybook/react-vite": "8.6.14",
@@ -27,11 +40,12 @@
     "eslint-config-next": "16.1.4",
     "jsdom": "27.4.0",
     "postcss": "8.5.6",
-    "prettier": "4.0.17",
+    "prettier": "^3.8.0",
     "storybook": "8.6.14",
     "tailwindcss": "3.4.19",
     "turbo": "2.7.5",
     "typescript": "5.9.3",
+    "vite": "^6.0.0",
     "vitest": "4.0.17"
   }
 }

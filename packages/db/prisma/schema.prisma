@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MembershipRole {
+  OWNER
+  MEMBER
+}
+
+model User {
+  id           String              @id @default(uuid())
+  email        String              @unique
+  displayName  String
+  createdAt    DateTime            @default(now())
+  memberships  Membership[]
+  sessions     Session[]
+  credentials  WebAuthnCredential[]
+  backupCodes  BackupCode[]
+  challenges   WebAuthnChallenge[]
+  eventLogs    EventLog[]          @relation("UserEventLogs")
+}
+
+model Organization {
+  id           String          @id @default(uuid())
+  name         String
+  createdAt    DateTime        @default(now())
+  memberships  Membership[]
+  entitlements OrgEntitlements?
+  eventLogs    EventLog[]      @relation("OrgEventLogs")
+}
+
+model Membership {
+  id             String         @id @default(uuid())
+  userId         String
+  organizationId String
+  role           MembershipRole @default(OWNER)
+  createdAt      DateTime       @default(now())
+
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, organizationId])
+}
+
+model OrgEntitlements {
+  id                 String       @id @default(uuid())
+  organizationId     String       @unique
+  plan               String       @default("free")
+  subscriptionStatus String       @default("active")
+  features           Json         @default("{}")
+  limits             Json         @default("{}")
+  createdAt          DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+}
+
+model EventLog {
+  id             String    @id @default(uuid())
+  organizationId String?
+  actorUserId    String?
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+
+  organization Organization? @relation("OrgEventLogs", fields: [organizationId], references: [id])
+  actor        User?         @relation("UserEventLogs", fields: [actorUserId], references: [id])
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model WebAuthnCredential {
+  id           String   @id @default(uuid())
+  userId       String
+  credentialID Bytes    @unique
+  publicKey    Bytes
+  counter      Int
+  transports   String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model WebAuthnChallenge {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  challenge String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model BackupCode {
+  id        String   @id @default(uuid())
+  userId    String
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
