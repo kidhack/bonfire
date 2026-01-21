@@ -17,6 +17,7 @@ export function AuthPanel() {
   const [status, setStatus] = useState<string | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  const [isRegistering, setIsRegistering] = useState(false);
 
   async function refreshSession() {
     const res = await fetch('/api/auth/session');
@@ -29,33 +30,46 @@ export function AuthPanel() {
   }, []);
 
   async function handleRegister() {
+    if (isRegistering) {
+      return;
+    }
+    setIsRegistering(true);
     setStatus(null);
-    const payload = {
-      email: sessionUser?.email ?? email,
-      displayName: sessionUser?.displayName ?? displayName,
-    };
-    const optionsRes = await fetch('/api/auth/register/options', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!optionsRes.ok) {
-      setStatus((await optionsRes.json()).error ?? 'Failed to start registration');
-      return;
+    try {
+      const payload = {
+        email: sessionUser?.email ?? email,
+        displayName: sessionUser?.displayName ?? displayName,
+      };
+      const optionsRes = await fetch('/api/auth/register/options', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!optionsRes.ok) {
+        setStatus((await optionsRes.json()).error ?? 'Failed to start registration');
+        return;
+      }
+      const options = await optionsRes.json();
+      setStatus('Waiting for passkey prompt…');
+      const response = await startRegistration({ optionsJSON: options });
+      const verifyRes = await fetch('/api/auth/register/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: payload.email, response }),
+      });
+      if (!verifyRes.ok) {
+        setStatus((await verifyRes.json()).error ?? 'Registration failed');
+        return;
+      }
+      await refreshSession();
+      setStatus('Passkey registered.');
+    } catch (error) {
+      const message =
+        error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      setStatus(message);
+    } finally {
+      setIsRegistering(false);
     }
-    const options = await optionsRes.json();
-    const response = await startRegistration(options);
-    const verifyRes = await fetch('/api/auth/register/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: payload.email, response }),
-    });
-    if (!verifyRes.ok) {
-      setStatus((await verifyRes.json()).error ?? 'Registration failed');
-      return;
-    }
-    await refreshSession();
-    setStatus('Passkey registered.');
   }
 
   async function handleAuthenticate() {
@@ -70,18 +84,25 @@ export function AuthPanel() {
       return;
     }
     const options = await optionsRes.json();
-    const response = await startAuthentication(options);
-    const verifyRes = await fetch('/api/auth/authenticate/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, response }),
-    });
-    if (!verifyRes.ok) {
-      setStatus((await verifyRes.json()).error ?? 'Authentication failed');
-      return;
+    try {
+      setStatus('Waiting for passkey prompt…');
+      const response = await startAuthentication({ optionsJSON: options });
+      const verifyRes = await fetch('/api/auth/authenticate/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, response }),
+      });
+      if (!verifyRes.ok) {
+        setStatus((await verifyRes.json()).error ?? 'Authentication failed');
+        return;
+      }
+      await refreshSession();
+      setStatus('Signed in.');
+    } catch (error) {
+      const message =
+        error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      setStatus(message);
     }
-    await refreshSession();
-    setStatus('Signed in.');
   }
 
   async function handleGenerateBackupCodes() {
@@ -98,10 +119,11 @@ export function AuthPanel() {
 
   async function handleRedeemBackupCode() {
     setStatus(null);
+    const normalized = backupCode.trim().split(/\s+/)[0] ?? '';
     const res = await fetch('/api/auth/backup-codes/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, code: backupCode }),
+      body: JSON.stringify({ email, code: normalized }),
     });
     if (!res.ok) {
       setStatus((await res.json()).error ?? 'Failed to redeem backup code');
@@ -115,6 +137,18 @@ export function AuthPanel() {
     await fetch('/api/auth/sign-out', { method: 'POST' });
     setSessionUser(null);
     setStatus('Signed out.');
+  }
+
+  async function handleResetUser() {
+    setStatus(null);
+    const res = await fetch('/api/auth/reset', { method: 'POST' });
+    if (!res.ok) {
+      setStatus((await res.json()).error ?? 'Failed to reset user');
+      return;
+    }
+    setSessionUser(null);
+    setCodes(null);
+    setStatus('User reset complete.');
   }
 
   return (
@@ -133,12 +167,15 @@ export function AuthPanel() {
         />
       </div>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        <Button variant="primary" onClick={handleRegister}>
-          {sessionUser ? 'Add passkey' : 'Register passkey'}
+        <Button variant="primary" onClick={handleRegister} disabled={isRegistering}>
+          {isRegistering ? 'Registering…' : sessionUser ? 'Add passkey' : 'Register passkey'}
         </Button>
         <Button onClick={handleAuthenticate}>Sign in</Button>
         <Button variant="ghost" onClick={handleSignOut}>
           Sign out
+        </Button>
+        <Button variant="ghost" onClick={handleResetUser}>
+          Reset user
         </Button>
       </div>
       <div style={{ display: 'grid', gap: '8px' }}>

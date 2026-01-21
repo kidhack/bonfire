@@ -2,13 +2,25 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma, recordEvent } from '@bonfire/db';
 
-import { createSession, jsonError } from '@/lib/auth';
+import { createSession, getSessionUser, jsonError } from '@/lib/auth';
 import { verifyBackupCode } from '@/lib/backupCodes';
 import { logError, logInfo } from '@/lib/logging';
 
 const verifySchema = z.object({
-  email: z.string().email(),
-  code: z.string().min(6).max(32),
+  email: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.string().email().optional(),
+  ),
+  code: z.preprocess(
+    (value) => {
+      if (typeof value !== 'string') {
+        return value;
+      }
+      const firstToken = value.trim().split(/\s+/)[0] ?? '';
+      return firstToken;
+    },
+    z.string().min(6).max(64),
+  ),
 });
 
 export async function POST(request: Request) {
@@ -20,8 +32,19 @@ export async function POST(request: Request) {
       return jsonError('Invalid input', 400);
     }
 
+    const normalizedCode = parsed.data.code.replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+    if (!normalizedCode) {
+      return jsonError('Invalid input', 400);
+    }
+
+    const sessionUser = await getSessionUser();
+    const email = parsed.data.email ?? sessionUser?.email;
+    if (!email) {
+      return jsonError('Email is required', 400);
+    }
+
     const user = await prisma.user.findUnique({
-      where: { email: parsed.data.email },
+      where: { email },
     });
 
     if (!user) {
@@ -32,7 +55,7 @@ export async function POST(request: Request) {
       where: { userId: user.id, usedAt: null },
     });
 
-    const match = codes.find((code) => verifyBackupCode(parsed.data.code, code.codeHash));
+    const match = codes.find((code) => verifyBackupCode(normalizedCode, code.codeHash));
     if (!match) {
       return jsonError('Invalid backup code', 401);
     }

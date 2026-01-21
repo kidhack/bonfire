@@ -4,7 +4,7 @@ import { passkeyRegisterSchema } from '@bonfire/types';
 
 import { getSessionUser, jsonError } from '@/lib/auth';
 import { logError, logInfo } from '@/lib/logging';
-import { createRegistrationOptions } from '@/lib/webauthn';
+import { createRegistrationOptions, resolveRpIdAndOrigin } from '@/lib/webauthn';
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
@@ -21,28 +21,33 @@ export async function POST(request: Request) {
     if (!user) {
       const existing = await prisma.user.findUnique({
         where: { email: parsed.data.email },
+        include: { credentials: true },
       });
 
       if (existing) {
-        return jsonError('Account exists. Sign in to add a passkey.', 409);
-      }
-
-      user = await prisma.user.create({
+        if (existing.credentials.length > 0) {
+          return jsonError('Account exists. Sign in to add a passkey.', 409);
+        }
+        user = existing;
+      } else {
+        user = await prisma.user.create({
         data: {
           email: parsed.data.email,
           displayName: parsed.data.displayName,
         },
-      });
+        });
 
-      await recordEvent({
-        action: 'auth.user.create',
-        entityType: 'User',
-        entityId: user.id,
-        actorUserId: user.id,
-      });
+        await recordEvent({
+          action: 'auth.user.create',
+          entityType: 'User',
+          entityId: user.id,
+          actorUserId: user.id,
+        });
+      }
     }
 
-    const options = await createRegistrationOptions(user.id, user.email);
+    const { rpID } = resolveRpIdAndOrigin(request.headers.get('origin'));
+    const options = await createRegistrationOptions(user.id, user.email, rpID);
     logInfo('auth.register.options', { requestId, userId: user.id });
     return NextResponse.json(options);
   } catch (error) {

@@ -4,7 +4,7 @@ import { passkeyAuthenticateSchema } from '@bonfire/types';
 
 import { jsonError } from '@/lib/auth';
 import { logError, logInfo } from '@/lib/logging';
-import { createAuthenticationOptions } from '@/lib/webauthn';
+import { createAuthenticationOptions, resolveRpIdAndOrigin } from '@/lib/webauthn';
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
@@ -24,7 +24,8 @@ export async function POST(request: Request) {
       return jsonError('No passkeys found for this account', 404);
     }
 
-    const options = await createAuthenticationOptions(user.id);
+    const { rpID } = resolveRpIdAndOrigin(request.headers.get('origin'));
+    const options = await createAuthenticationOptions(user.id, rpID);
     logInfo('auth.authenticate.options', { requestId, userId: user.id });
     return NextResponse.json(options);
   } catch (error) {

@@ -5,7 +5,7 @@ import type { AuthenticationResponseJSON } from '@simplewebauthn/types';
 
 import { createSession, jsonError } from '@/lib/auth';
 import { logError, logInfo } from '@/lib/logging';
-import { verifyAuthentication } from '@/lib/webauthn';
+import { resolveRpIdAndOrigin, verifyAuthentication } from '@/lib/webauthn';
 
 const verifySchema = z.object({
   email: z.string().email(),
@@ -29,13 +29,22 @@ export async function POST(request: Request) {
       return jsonError('User not found', 404);
     }
 
+    const { origin, rpID } = resolveRpIdAndOrigin(request.headers.get('origin'));
     const verification = await verifyAuthentication(
       user.id,
       parsed.data.response.id,
       parsed.data.response,
+      origin,
+      rpID,
     );
 
-    if (!verification.verified || !verification.authenticationInfo) {
+    if (!verification.verified) {
+      return jsonError('Authentication failed', 401);
+    }
+
+    const authenticationInfo =
+      'authenticationInfo' in verification ? verification.authenticationInfo : null;
+    if (!authenticationInfo) {
       return jsonError('Authentication failed', 401);
     }
 
@@ -45,7 +54,7 @@ export async function POST(request: Request) {
         credentialID: Buffer.from(parsed.data.response.id, 'base64url'),
       },
       data: {
-        counter: verification.authenticationInfo.newCounter,
+        counter: authenticationInfo.newCounter,
       },
     });
 

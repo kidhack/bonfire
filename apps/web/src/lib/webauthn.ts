@@ -11,17 +11,33 @@ import type {
 } from '@simplewebauthn/types';
 import { prisma } from '@bonfire/db';
 
-const rpID = process.env.WEBAUTHN_RP_ID ?? 'localhost';
-const origin = process.env.WEBAUTHN_ORIGIN ?? 'http://localhost:3000';
+const defaultRpID = process.env.WEBAUTHN_RP_ID ?? 'localhost';
+const defaultOrigin = process.env.WEBAUTHN_ORIGIN ?? 'http://localhost:3000';
 const rpName = 'Bonfire';
 
 const challengeTTL = 5 * 60 * 1000;
 
-export async function createRegistrationOptions(userId: string, email: string) {
+export function resolveRpIdAndOrigin(originHeader?: string | null) {
+  if (!originHeader) {
+    return { rpID: defaultRpID, origin: defaultOrigin };
+  }
+  try {
+    const url = new URL(originHeader);
+    return { rpID: url.hostname, origin: url.origin };
+  } catch {
+    return { rpID: defaultRpID, origin: defaultOrigin };
+  }
+}
+
+export async function createRegistrationOptions(
+  userId: string,
+  email: string,
+  rpID: string,
+) {
   const options = await generateRegistrationOptions({
     rpName,
     rpID,
-    userID: userId,
+    userID: new TextEncoder().encode(userId),
     userName: email,
     attestationType: 'none',
     authenticatorSelection: {
@@ -42,7 +58,7 @@ export async function createRegistrationOptions(userId: string, email: string) {
   return options;
 }
 
-export async function createAuthenticationOptions(userId: string) {
+export async function createAuthenticationOptions(userId: string, rpID: string) {
   const credentials = await prisma.webAuthnCredential.findMany({
     where: { userId },
   });
@@ -50,7 +66,7 @@ export async function createAuthenticationOptions(userId: string) {
   const options = await generateAuthenticationOptions({
     rpID,
     allowCredentials: credentials.map((cred) => ({
-      id: cred.credentialID,
+      id: Buffer.from(cred.credentialID).toString('base64url'),
       type: 'public-key',
       transports: cred.transports ? (cred.transports.split(',') as AuthenticatorTransport[]) : undefined,
     })),
@@ -89,6 +105,8 @@ async function consumeChallenge(userId: string, type: string) {
 export async function verifyRegistration(
   userId: string,
   response: RegistrationResponseJSON,
+  origin: string,
+  rpID: string,
 ) {
   const expectedChallenge = await consumeChallenge(userId, 'registration');
   if (!expectedChallenge) {
@@ -107,6 +125,8 @@ export async function verifyAuthentication(
   userId: string,
   credentialId: string,
   response: AuthenticationResponseJSON,
+  origin: string,
+  rpID: string,
 ) {
   const expectedChallenge = await consumeChallenge(userId, 'authentication');
   if (!expectedChallenge) {
@@ -126,9 +146,9 @@ export async function verifyAuthentication(
     expectedChallenge,
     expectedOrigin: origin,
     expectedRPID: rpID,
-    authenticator: {
-      credentialID: credential.credentialID,
-      credentialPublicKey: credential.publicKey,
+    credential: {
+      id: Buffer.from(credential.credentialID).toString('base64url'),
+      publicKey: new Uint8Array(credential.publicKey),
       counter: credential.counter,
     },
   });

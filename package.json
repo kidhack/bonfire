@@ -10,12 +10,13 @@
     "test": "turbo run test",
     "storybook": "turbo run storybook",
     "format": "prettier --check .",
-    "dev:clean": "rm -f apps/web/.next/dev/lock && rm -rf apps/web/.next && echo \"If port is in use, run: lsof -i :3000\"",
+    "dev:clean": "rm -f apps/web/.next/dev/lock && echo \"If port is in use, run: pnpm web:ports\"",
+    "dev:nuke": "rm -rf apps/web/.next apps/web/.turbo .turbo",
     "db:migrate": "pnpm --filter @bonfire/db prisma:migrate",
     "db:seed": "pnpm --filter @bonfire/db seed",
     "web:dev": "pnpm dev:clean && pnpm --filter @bonfire/web dev",
     "web:ports": "lsof -i :3000-3010 || true",
-    "web:kill": "lsof -i :3000-3010 || true"
+    "web:kill": "lsof -ti :3000-3010 | sort -u | awk '{print \"kill -9 \"$1}' || true"
   },
   "packageManager": "pnpm@10.28.1",
   "pnpm": {
